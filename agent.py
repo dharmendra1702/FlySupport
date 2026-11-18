@@ -17,8 +17,116 @@ from support import (MODEL, SYSTEM_PROMPT, call_local, execute_tool, mcp_client,
 MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
 
 TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
-EXTRA_TOOLS: List[Dict[str, Any]] = []   # ✏️ Build 2, step 2.1: schemas for the tools you add
-LOCAL_TOOLS: Dict[str, Any] = {}         # ✏️ Build 2, step 2.1: the functions behind them
+
+# ── Build 2 tools: the functions (they read Larkspur's own files, never invent) ──
+import json
+from collections import Counter
+from pathlib import Path
+
+_DATA = Path(__file__).resolve().parent / "data" / "americas"
+
+
+def care_entitlements(cause_code: str, status: str, delay_minutes: int = 0) -> Dict[str, Any]:
+    """Meal / hotel / ground care for a disruption, straight from disruption_policy.json."""
+    policy = json.loads((_DATA / "disruption_policy.json").read_text(encoding="utf-8"))
+    cause_class = policy["cause_classes"].get(cause_code)
+    if cause_class is None:
+        return {"error": f"Unknown cause_code {cause_code!r}; expected one of {list(policy['cause_classes'])}"}
+    if status == "CANCELLED":
+        band = "CXL"
+    elif status == "DIVERTED":
+        band = "DIV"
+    elif status in ("ON_TIME", "DELAYED"):
+        band = next((b["band"] for b in policy["delay_bands"]
+                     if b.get("min_minutes") is not None
+                     and b["min_minutes"] <= delay_minutes
+                     and (b["max_minutes"] is None or delay_minutes <= b["max_minutes"])), None)
+    else:
+        return {"error": f"Unknown status {status!r}"}
+    prefix = "CTL" if cause_class == "controllable" else "UNC"
+    row = next((r for r in policy["rows"] if r["policy_row_id"] == f"{prefix}-{band}"), None)
+    if row is None:
+        return {"error": "No policy row found for this cause, status and delay."}
+    return {
+        "policy_row_id": row["policy_row_id"],
+        "cause": policy["cause_labels_customer"][cause_code]["en"],
+        "care": row["care"],  # conditional parts (overnight, wait time) are returned as written
+        "explainer": row["explainer_en"],
+        "source": "disruption_policy.json",
+    }
+
+
+def reopen_stats(intent_label: str = "") -> Dict[str, Any]:
+    """How often each kind of problem came back within 72 hours, from the sample transcripts."""
+    rows = [json.loads(line) for line in
+            (_DATA / "transcripts_sample.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    if intent_label:
+        rows = [r for r in rows if r["intent_label"] == intent_label]
+        if not rows:
+            return {"error": f"No sample conversations with intent_label {intent_label!r}."}
+    by_status: Dict[str, Counter] = {}
+    for r in rows:
+        by_status.setdefault(r["disruption"]["status"], Counter())[r["reopened_within_72h"]] += 1
+    return {
+        "conversations": len(rows),
+        "reopened_within_72h": sum(1 for r in rows if r["reopened_within_72h"]),
+        "by_status": {s: {"conversations": sum(c.values()), "reopened": c[True]} for s, c in by_status.items()},
+        "reopen_reasons": [r["reopen_reason"] for r in rows if r["reopened_within_72h"]],
+        "caveat": "Tiny sample of human-handled chats, not a prediction for any one customer.",
+        "source": "transcripts_sample.jsonl",
+    }
+
+
+EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas for the tools you add
+    {
+        "name": "care_entitlements",
+        "description": (
+            "Use this whenever the customer asks whether they get a meal, a hotel or "
+            "ground transport while they wait, or why they do not get one. It returns "
+            "the care rules for that cause and delay in Larkspur's own words: meal credit "
+            "amount and wait threshold, whether a hotel is covered, ground transport, and "
+            "a plain-language explanation of why. Call it right after get_flight_status, "
+            "and use its explanation to answer the care question. check_policy is for "
+            "rebooking, refunds and goodwill. Take cause_code, status and delay_minutes "
+            "from get_flight_status, never from the customer's words."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"],
+                               "description": "Cause of the disruption, from get_flight_status."},
+                "status": {"type": "string", "enum": ["ON_TIME", "DELAYED", "CANCELLED", "DIVERTED"]},
+                "delay_minutes": {"type": "integer",
+                                  "description": "Delay in minutes; 0 when CANCELLED or DIVERTED."},
+            },
+            "required": ["cause_code", "status"],
+        },
+    },
+    {
+        "name": "reopen_stats",
+        "description": (
+            "Answer 'is this problem going to come back?': how often a kind of problem "
+            "(for example a cancellation rebook, a refund-vs-credit question, a hotel "
+            "request) led the customer to contact Larkspur again within 72 hours, in a small "
+            "sample of conversations handled by people. Use it for questions about whether "
+            "an issue will recur or need a second contact. Quote the counts and say the "
+            "sample is small; never present it as a prediction for this customer."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "intent_label": {"type": "string",
+                                 "description": "Optional kind of problem, e.g. rebook_after_cancellation, "
+                                                "refund_vs_credit, compensation_hotel_request. Omit for all."},
+            },
+            "required": [],
+        },
+    },
+]
+LOCAL_TOOLS: Dict[str, Any] = {          # ✏️ Build 2, step 2.1: the functions behind them
+    "care_entitlements": care_entitlements,
+    "reopen_stats": reopen_stats,
+}
 
 
 def text_of(response) -> str:
