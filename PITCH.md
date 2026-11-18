@@ -12,7 +12,7 @@ Next: Enable prompt caching to cut repeat input tokens, add extra tools/MCP data
 
 Still broken: Caching is off so every turn resends the full chat history (61,081 input tokens across 5 tickets), `TONE_ADDENDUM` is still empty (0 chars), and 0 custom tools are added yet.
 
-Lever: cost
+Lever: intelligence
 
 ## Priya asked
 
