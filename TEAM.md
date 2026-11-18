@@ -6,3 +6,4 @@
 - Dharmendra Reddy MS
 - Rameez CM
 - Rajveer Kondeti
+- Soumya Acharya
