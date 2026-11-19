@@ -217,7 +217,9 @@ TONE_ADDENDUM = (                        # ✏️ Build 4, step 4.1, intelligenc
     "\n=== LENGTH ===\n"
     "Keep every reply short: at most 120 words, no repeated explanations and no "
     "restating what the tools already returned. Still give every fact the customer "
-    "needs, copied exactly from the tool results.\n"
+    "needs, copied exactly from the tool results. Never drop a policy decision to "
+    "save words: always say the outcome of each policy result you used (waiver, "
+    "refund, meal, hotel, goodwill) and its reason.\n"
 )
 
 EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas for the tools you add
