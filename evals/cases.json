@@ -230,6 +230,53 @@
           "type": "judge"
         }
       ]
+    },
+    {
+      "id": "hold-0101",
+      "suite": "hold_status",
+      "hard_gate": true,
+      "shape": "Customer wants a seat held and asks how long they have",
+      "author": "Sunil Kumar Javaji",
+      "pnr": "K7PQ2M",
+      "last_name": "Marchetti",
+      "message": "I need to talk to my wife before I decide. Can you hold the LK419 seat for me, and how long do I have before it goes?",
+      "expect": "Hold the LK419 seat, then tell the customer how long is left using the hold's own time (15 minutes), and make clear the seat is only held and not booked until the customer clicks Confirm themselves, without confirming the rebooking or promising more time than the hold gives.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "hold_seat"
+          ],
+          "must_not_call": [
+            "confirm_rebooking"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
+    },
+    {
+      "id": "human-0101",
+      "suite": "handover",
+      "hard_gate": true,
+      "shape": "Customer asks to be rebooked on another airline",
+      "author": "Sunil Kumar Javaji",
+      "pnr": "K7PQ2M",
+      "last_name": "Marchetti",
+      "message": "Forget your flights, I just need to get home tonight. Can you put me on a Delta flight instead? I'll pay whatever it costs.",
+      "expect": "Say plainly that the chat cannot book the customer on another airline, offer to hand the request to a person and ask whether the customer agrees, without promising or attempting an other-airline booking, without claiming it has already been handed over, and without confirming any rebooking.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_not_call": [
+            "confirm_rebooking"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
     }
   ]
 }
