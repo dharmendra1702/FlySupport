@@ -38,11 +38,11 @@ th { background: #f4eee4; font-size: 12px; letter-spacing: .05em; text-transform
 .foot { color: #a2968b; font-size: 12px; margin-top: 40px; }
 </style><div class='page'>
 <h1>Agent <em>readout.</em></h1>
-<p class='sub'>Team Room 13 · 2026-11-19 05:02</p>
+<p class='sub'>Team Room 13 · 2026-11-19 05:33</p>
 <h2>Architecture: what the agent is</h2>
 <div class='strip'>
-<div class='stat'><b>15</b><span>tools offered</span></div>
-<div class='stat'><b>4</b><span>beyond the given 9</span></div>
+<div class='stat'><b>19</b><span>tools offered</span></div>
+<div class='stat'><b>8</b><span>beyond the given 9</span></div>
 <div class='stat'><b>2</b><span>served over MCP</span></div>
 <div class='stat'><b>8</b><span>loop ceiling</span></div>
 <div class='stat'><b>1478</b><span>system prompt chars</span></div>
@@ -58,15 +58,19 @@ th { background: #f4eee4; font-size: 12px; letter-spacing: .05em; text-transform
 <tr><td><span class='pill'>issue_voucher</span></td><td>Issue a meal, ground, hotel, or goodwill voucher. Auto-approves within the policy&#x27;s threshold for that type; a</td><td>227</td><td></td></tr>
 <tr><td><span class='pill'>escalate_to_human</span></td><td>Hand this conversation to a human, with your reasoning attached. Use for groups, partner segments, unaccompani</td><td>220</td><td></td></tr>
 <tr><td><span class='pill'>send_confirmation</span></td><td>Send the customer a written record of an action that has already happened, such as a confirmed rebooking or an</td><td>296</td><td></td></tr>
+<tr class='yours'><td><span class='pill'>cause_in_plain_words</span></td><td>Translate a flight disruption cause_code (WX, ATC, MX, CREW, SEC) into Larkspur&#x27;s approved plain-language cust</td><td>331</td><td><span class='pill you'>yours</span></td></tr>
+<tr class='yours'><td><span class='pill'>ground_stop_status</span></td><td>Check whether an airport (such as DEN) currently has an active ground stop and whether an end time is known, u</td><td>314</td><td><span class='pill you'>yours</span></td></tr>
 <tr class='yours'><td><span class='pill'>care_entitlements</span></td><td>Use this whenever the customer asks whether they get a meal, a hotel or ground transport while they wait, or w</td><td>579</td><td><span class='pill you'>yours</span></td></tr>
 <tr class='yours'><td><span class='pill'>reopen_stats</span></td><td>Answer &#x27;is this problem going to come back?&#x27;: how often a kind of problem (for example a cancellation rebook, </td><td>448</td><td><span class='pill you'>yours</span></td></tr>
 <tr class='yours'><td><span class='pill'>departures_in_window</span></td><td>List Larkspur flights still scheduled to leave one airport on one local date between two times, from the fligh</td><td>720</td><td><span class='pill you'>yours</span></td></tr>
 <tr class='yours'><td><span class='pill'>seats_left</span></td><td>Check how many free seats one flight has in each cabin, from the flight schedule: economy (Y) and premium (J).</td><td>624</td><td><span class='pill you'>yours</span></td></tr>
+<tr class='yours'><td><span class='pill'>hold_time_left</span></td><td>Tell the customer how long they have left before a held seat is released. Use it when they ask how much time t</td><td>523</td><td><span class='pill you'>yours</span></td></tr>
+<tr class='yours'><td><span class='pill'>what_automation_will_not_do</span></td><td>Return the list of things this chat is not allowed to do and that people handle instead (Handbook section 7). </td><td>476</td><td><span class='pill you'>yours</span></td></tr>
 <tr class='yours'><td><span class='pill'>next_available_day</span></td><td>Answer the first question a cancelled or stranded Larkspur customer asks: what is the soonest day you can actu</td><td>628</td><td><span class='pill you'>via mcp</span></td></tr>
 <tr class='yours'><td><span class='pill'>fare_rules</span></td><td>Return the Larkspur Customer Commitment and fare rules text behind an entitlement decision, straight from the </td><td>578</td><td><span class='pill you'>via mcp</span></td></tr>
 </table>
-<p class='sub'>2 of those 15 tools are served by support/mcp_server.py, a separate program, and are tagged <span class='pill you'>via mcp</span> above. Claude cannot tell: same name, same description, same tokens.</p>
-<p class='sub'>local dispatch: <span class='pill you'>care_entitlements</span>, <span class='pill you'>departures_in_window</span>, <span class='pill you'>reopen_stats</span>, <span class='pill you'>seats_left</span></p>
+<p class='sub'>2 of those 19 tools are served by support/mcp_server.py, a separate program, and are tagged <span class='pill you'>via mcp</span> above. Claude cannot tell: same name, same description, same tokens.</p>
+<p class='sub'>local dispatch: <span class='pill you'>care_entitlements</span>, <span class='pill you'>cause_in_plain_words</span>, <span class='pill you'>departures_in_window</span>, <span class='pill you'>ground_stop_status</span>, <span class='pill you'>hold_time_left</span>, <span class='pill you'>reopen_stats</span>, <span class='pill you'>seats_left</span>, <span class='pill you'>what_automation_will_not_do</span></p>
 <h2>All five ticket types: what it did across the set</h2>
 <p class='sub'>python3 run.py --all · 2026-11-18T11:32:06</p>
 <div class='strip'>
@@ -120,4 +124,4 @@ th { background: #f4eee4; font-size: 12px; letter-spacing: .05em; text-transform
 <div class='meta'>← stop_reason=<b class='stopped'>end_turn</b> · blocks: text · in 5,295 / out 460 · 4.5s</div>
 </div>
 <p class='foot'>Generated by readout.py · Larkspur Airlines is a fictional training scenario · Confidential / do not distribute</p></div>
-<script type="application/json" id="evidence">{"generated": "2026-11-19T05:02:39", "pod": "Room 13", "banked_by": "Rajveer Kondeti", "banked": {"1.2": "3A2-358", "1.3": "F3D-89D", "1.4": "5DA-7EA", "2.1": "57C-E71", "2.2": "C16-4F1"}, "trace": {"turns": 4, "tool_calls": 4, "tool_names": ["lookup_booking", "get_flight_status", "check_policy", "cause_in_plain_words"], "saw_thinking": false, "used_format": false, "used_tool_choice_none": false, "streamed": false, "deltas_seen": 0, "tokens": {"input": 17841, "output": 812, "cache_read": 0, "cache_write": 0}, "cache_hit_ratio": null, "elapsed": 10.3}, "all_shapes": {"attempted": 5, "shapes": 5, "failed": 0, "resolved": 5, "turns": 19, "tool_calls": 14, "tokens_in": 61081, "tokens_out": 5027, "cache_read": 0, "unfinished": [], "errors": []}}</script>
+<script type="application/json" id="evidence">{"generated": "2026-11-19T05:33:58", "pod": "Room 13", "banked_by": "Rajveer Kondeti", "banked": {"1.2": "3A2-358", "1.3": "F3D-89D", "1.4": "5DA-7EA", "2.1": "57C-E71", "2.2": "C16-4F1", "3.1": "317-362"}, "trace": {"turns": 4, "tool_calls": 4, "tool_names": ["lookup_booking", "get_flight_status", "check_policy", "cause_in_plain_words"], "saw_thinking": false, "used_format": false, "used_tool_choice_none": false, "streamed": false, "deltas_seen": 0, "tokens": {"input": 17841, "output": 812, "cache_read": 0, "cache_write": 0}, "cache_hit_ratio": null, "elapsed": 10.3}, "all_shapes": {"attempted": 5, "shapes": 5, "failed": 0, "resolved": 5, "turns": 19, "tool_calls": 14, "tokens_in": 61081, "tokens_out": 5027, "cache_read": 0, "unfinished": [], "errors": []}}</script>
