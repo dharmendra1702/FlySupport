@@ -419,6 +419,18 @@ def tool_results(response) -> List[Dict[str, Any]]:
     return results
 
 
+def system_blocks() -> List[Dict[str, Any]]:
+    """The system prompt as two blocks. The stable text goes first and carries the
+    cache breakpoint, which caches the tool schemas and the system prompt together.
+    The clock line changes every second, so it goes after the breakpoint: it is
+    still sent every turn, but it can no longer break the cached prefix."""
+    return [
+        {"type": "text", "text": SYSTEM_PROMPT + TONE_ADDENDUM,
+         "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": runtime_preamble().strip()},
+    ]
+
+
 def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏️ Build 1, step 1.2
     """Run the tool loop until Claude stops asking for tools. Return its final text."""
     client, tracer = new_session()
@@ -428,7 +440,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
     ]
 
     response = client.messages.create(
-        model=MODEL, max_tokens=4096, system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
+        model=MODEL, max_tokens=4096, system=system_blocks(),
         thinking={"type": "adaptive"}, tools=tools, messages=messages,
     )
 
@@ -437,7 +449,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results(response)})
         response = client.messages.create(
-            model=MODEL, max_tokens=4096, system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
+            model=MODEL, max_tokens=4096, system=system_blocks(),
             thinking={"type": "adaptive"}, tools=tools, messages=messages,
         )
         turns += 1

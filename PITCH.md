@@ -6,19 +6,19 @@ Built: A support agent for disrupted flights with Larkspur's nine tools, eight t
 
 Does: Looks up bookings, checks live flight status and policy entitlements, finds open seats and earliest travel days, holds a seat for 15 minutes and tells the customer how long the hold has left, and says plainly what the chat cannot do and hands those cases to a person.
 
-Number: 61,081 to 73,840 tokens in, total across the five tickets (and the tool schemas now cost 5,486 tokens per turn with 19 tools, up from 3,260 with 13, counted by run.py --tool-tax).
+Number: $0.1009 to $0.0349 model cost per contact (-65%), average of 15 conversations (5 ticket types, 3 runs each), from bench.py before and after. Input tokens per contact went from 28,782 to 3,825 and the cache hit rate from off to 85%.
 
 Safety check: It places a 15-minute hold on a seat but never finalizes a rebooking without the customer's own Confirm-click token, verified in the trace for K7PQ2M.
 
-Next: Turn on prompt caching to cut repeat input tokens across turns and add a tone guardrail for angry passengers.
+Next: Add a tone guardrail for angry passengers, and cache the growing conversation as well as the tool schemas and system prompt.
 
-Still broken: Every API turn resends the uncached conversation and full tool schemas, and next_available_day checks availability for a single passenger rather than a multi-passenger group.
+Still broken: The conversation history is still sent uncached on every turn (only the tool schemas and system prompt are cached), and next_available_day checks availability for a single passenger rather than a multi-passenger group.
 
-Lever: <cost | speed | intelligence>
+Lever: cost
 
 ## Priya asked
 
-Costs: About 10 cents of model cost per contact ($0.1024), against the $6.90 a person costs today. That is measured by bench.py over 15 conversations (5 ticket types, 3 runs each): 29,308 tokens in and 967 out per contact, no caching, model cost only and not the loaded cost. The 19 tool schemas alone add 5,486 tokens to every turn.
+Costs: About 3.5 cents of model cost per contact ($0.0349), against the $6.90 a person costs today. That is measured by bench.py over 15 conversations (5 ticket types, 3 runs each) with prompt caching on, down from $0.1009 before. Model cost only, not the loaded cost. Speed did not change (p50 about 10 seconds either way).
 Wrong: We find out by reading the wire trace of each run, which is how we caught Claude sending dates in the wrong format and the loop dropping its tool calls. We have no eval cases yet, so nothing catches a wrong answer automatically. What protects the customer today: the agent only holds a seat, and nothing is rebooked until the customer clicks Confirm; anything outside its remit goes to a person.
 Runs it: Not decided yet, and it needs a named owner before launch. What it says comes from Larkspur's own files (the policy, the Handbook, the flight data), so whoever owns those at Larkspur should own the agent: watch the traces, fix the tool descriptions and update it when the policy changes.
-Left out: What Handbook section 7 gives to people: refunds, fare-difference collection, hotel approval, other-airline rebooking, groups of 10 or more, unaccompanied minors, partner-operated flights, pets in cabin, medical requests and baggage tracing. The agent explains and hands over for those. We also did not build Spanish, a tone guardrail for angry passengers, group seat checks or prompt caching; we ran out of time.
+Left out: What Handbook section 7 gives to people: refunds, fare-difference collection, hotel approval, other-airline rebooking, groups of 10 or more, unaccompanied minors, partner-operated flights, pets in cabin, medical requests and baggage tracing. The agent explains and hands over for those. We also did not build Spanish, a tone guardrail for angry passengers or group seat checks; we ran out of time.
