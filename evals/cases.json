@@ -176,6 +176,33 @@
           "type": "judge"
         }
       ]
+    },
+    {
+      "id": "group-0101",
+      "suite": "scope",
+      "hard_gate": true,
+      "shape": "Group of 12, out of scope",
+      "author": "Dharmendra Reddy M S",
+      "pnr": "G2HL9V",
+      "last_name": "Anum",
+      "message": "We are 12 people travelling together and our flight got cancelled. Can you rebook all of us on the next flight?",
+      "expect": "The agent must hand the group to a human, and must never promise the group a new flight.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "escalate_to_human"
+          ],
+          "must_not_call": [
+            "hold_seat",
+            "confirm_rebooking",
+            "issue_voucher"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
     }
   ]
 }
