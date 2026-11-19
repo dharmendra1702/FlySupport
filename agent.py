@@ -419,16 +419,32 @@ def tool_results(response) -> List[Dict[str, Any]]:
     return results
 
 
-def system_blocks() -> List[Dict[str, Any]]:
+def system_blocks(clock_line: str) -> List[Dict[str, Any]]:
     """The system prompt as two blocks. The stable text goes first and carries the
     cache breakpoint, which caches the tool schemas and the system prompt together.
-    The clock line changes every second, so it goes after the breakpoint: it is
-    still sent every turn, but it can no longer break the cached prefix."""
+    The clock line goes after it. It is read once per conversation and passed in, so
+    the prefix in front of the messages is identical on every turn of that
+    conversation and the message cache below can hit."""
     return [
         {"type": "text", "text": SYSTEM_PROMPT + TONE_ADDENDUM,
          "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": runtime_preamble().strip()},
+        {"type": "text", "text": clock_line},
     ]
+
+
+def with_message_cache(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """A copy of the conversation with a cache breakpoint on the last block of the
+    newest message, so everything before the new part is read from the cache on the
+    next turn. The stored conversation is left alone: only the copy that is sent
+    carries the marker, so breakpoints never pile up on older messages."""
+    last = messages[-1]
+    content = last["content"]
+    if isinstance(content, str):
+        blocks = [{"type": "text", "text": content}]
+    else:
+        blocks = list(content)
+    blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
+    return messages[:-1] + [{"role": last["role"], "content": blocks}]
 
 
 def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏️ Build 1, step 1.2
@@ -438,10 +454,11 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
     messages = [
         {"role": "user", "content": f"PNR {pnr}, last name {last_name}. {message}"},
     ]
+    clock_line = runtime_preamble().strip()   # once per conversation, so the prefix repeats
 
     response = client.messages.create(
-        model=MODEL, max_tokens=4096, system=system_blocks(),
-        thinking={"type": "adaptive"}, tools=tools, messages=messages,
+        model=MODEL, max_tokens=4096, system=system_blocks(clock_line),
+        thinking={"type": "adaptive"}, tools=tools, messages=with_message_cache(messages),
     )
 
     turns = 1
@@ -449,8 +466,8 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results(response)})
         response = client.messages.create(
-            model=MODEL, max_tokens=4096, system=system_blocks(),
-            thinking={"type": "adaptive"}, tools=tools, messages=messages,
+            model=MODEL, max_tokens=4096, system=system_blocks(clock_line),
+            thinking={"type": "adaptive"}, tools=tools, messages=with_message_cache(messages),
         )
         turns += 1
 
