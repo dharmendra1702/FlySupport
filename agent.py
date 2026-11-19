@@ -111,6 +111,41 @@ def seats_left(flight_no: str, date: str, party_size: int = 1) -> Dict[str, Any]
     return {"error": "No flight %s on %s in the flight schedule." % (flight_no, date)}
 
 
+def hold_time_left(hold_id: str) -> Dict[str, Any]:
+    """Time left on a seat hold, from the holds in mock_backend.py and the same fixture 'now'."""
+    from support import mock_backend as backend
+    hold = backend._holds.get(hold_id)
+    if hold is None:
+        return {"error": f"No hold {hold_id!r}. Do not guess one; use the hold_id returned by "
+                         "hold_seat, or offer to hold a seat first."}
+    remaining = int((hold["expires_at"] - backend.FIXTURE_CLOCK).total_seconds())
+    if remaining <= 0:
+        return {"status": "expired", "hold_id": hold_id, "seconds_left": 0,
+                "source": "mock_backend.py holds"}
+    return {"status": "active", "hold_id": hold_id, "seconds_left": remaining,
+            "minutes_left": remaining // 60, "expires_at": hold["expires_at"].isoformat(),
+            "source": "mock_backend.py holds"}
+
+
+def what_automation_will_not_do() -> Dict[str, Any]:
+    """What the chat must hand to a person: Handbook section 7, read from fare_rules_excerpt.md."""
+    from support import mock_backend as backend
+    lines = (backend.DATA_DIR / "fare_rules_excerpt.md").read_text(encoding="utf-8").splitlines()
+    section: List[str] = []
+    inside = False
+    for line in lines:
+        if line.startswith("### "):
+            if inside:
+                break
+            inside = line.startswith("### 7.")
+        if inside:
+            section.append(line)
+    text = "\n".join(section).strip()
+    if not text:
+        return {"error": "Section 7 was not found in fare_rules_excerpt.md."}
+    return {"text": text, "source": "fare_rules_excerpt.md, section 7"}
+
+
 EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas for the tools you add
     {
         "name": "care_entitlements",
@@ -204,12 +239,50 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas f
             "required": ["flight_no", "date"],
         },
     },
+    {
+        "name": "hold_time_left",
+        "description": (
+            "Tell the customer how long they have left before a held seat is released. Use it "
+            "when they ask how much time they have, whether the seat is still theirs, or when "
+            "the hold runs out. It only reads an existing hold; it never creates, extends or "
+            "confirms one. Take hold_id from the hold_seat result earlier in this "
+            "conversation, never from the customer's words. If there is no hold yet, do not "
+            "call this; offer to hold a seat. Quote the minutes left, and remind the "
+            "customer that the seat is only held until they click Confirm."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hold_id": {"type": "string",
+                            "description": "The id returned by hold_seat, e.g. HOLD-1A2B3C. Never invent one."},
+            },
+            "required": ["hold_id"],
+        },
+    },
+    {
+        "name": "what_automation_will_not_do",
+        "description": (
+            "Return the list of things this chat is not allowed to do and that people handle "
+            "instead (Handbook section 7). Call it BEFORE answering whenever the customer asks "
+            "you to do something that may be outside the chat's remit, such as cancelling a "
+            "whole trip, a refund, a hotel, or a group or minor booking. Do not answer such "
+            "requests from memory. Takes no input. Quote the Handbook's wording, say plainly "
+            "that a person handles it, and offer the hand-over; never attempt the action."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 LOCAL_TOOLS: Dict[str, Any] = {          # ✏️ Build 2, step 2.1: the functions behind them
     "care_entitlements": care_entitlements,
     "reopen_stats": reopen_stats,
     "departures_in_window": departures_in_window,
     "seats_left": seats_left,
+    "hold_time_left": hold_time_left,
+    "what_automation_will_not_do": what_automation_will_not_do,
 }
 
 
