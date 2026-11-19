@@ -9,21 +9,86 @@ Where you edit:   grep -n '✏' agent.py   (six marks, one per place)
 Steps and gates:  https://anthropicpartnerbasecamp.bts.com/
 """
 from __future__ import annotations
+from collections import Counter
+import csv
+import json
+from pathlib import Path
 from typing import Any, Dict, List
 from support import (MODEL, SYSTEM_PROMPT, call_local, execute_tool, mcp_client,
                      new_session, next_available_day, record_tool_result,
                      runtime_preamble)
 
-MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
+DATA_DIR = Path(__file__).resolve().parent / "data" / "americas"
+_DATA = DATA_DIR
 
-TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
 
-# ── Build 2 tools: the functions (they read Larkspur's own files, never invent) ──
-import json
-from collections import Counter
-from pathlib import Path
+def cause_in_plain_words(cause_code: str, language: str = "en") -> Dict[str, Any]:
+    """Return the approved customer-facing wording for a disruption cause_code."""
+    policy = json.loads((DATA_DIR / "disruption_policy.json").read_text(encoding="utf-8"))
+    labels = policy.get("cause_labels_customer", {})
+    code = cause_code.strip().upper()
+    lang = language.strip().lower() or "en"
 
-_DATA = Path(__file__).resolve().parent / "data" / "americas"
+    if code not in labels:
+        return {
+            "found": False,
+            "cause_code": code,
+            "error": f"Unknown cause_code '{code}'. Valid codes: {', '.join(labels.keys())}",
+        }
+
+    entry = labels[code]
+    plain_label = entry.get(lang) or entry.get("en")
+    within_control = code in {"MX", "CREW"}
+    return {
+        "found": True,
+        "cause_code": code,
+        "language": lang if lang in entry else "en",
+        "customer_label": plain_label,
+        "within_airline_control": within_control,
+    }
+
+
+def ground_stop_status(airport: str = "DEN") -> Dict[str, Any]:
+    """Check current ground stop status and remarks for an airport using bookings.json clock and flights.csv."""
+    code = (airport or "DEN").strip().upper()
+    bookings_data = json.loads((DATA_DIR / "bookings.json").read_text(encoding="utf-8"))
+    now_str = bookings_data.get("fixture_clock", "")
+    clock_note = bookings_data.get("fixture_clock_note", "")
+    current_date = now_str.split("T")[0] if "T" in now_str else ""
+
+    ground_stop_flights = []
+    airport_flights_today = []
+    with (DATA_DIR / "flights.csv").open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            remarks = (row.get("remarks") or "").strip()
+            is_airport = row.get("origin") == code or row.get("dest") == code
+            if is_airport and (not current_date or row.get("date") == current_date):
+                airport_flights_today.append(row)
+            if "ground stop" in remarks.lower() and (is_airport or code in remarks.upper()):
+                ground_stop_flights.append({
+                    "flight_no": row["flight_no"],
+                    "route": f"{row['origin']}-{row['dest']}",
+                    "date": row["date"],
+                    "sched_dep_local": row["sched_dep_local"],
+                    "status": row["status"],
+                    "delay_min": row["delay_min"],
+                    "remarks": remarks,
+                })
+
+    active = bool(ground_stop_flights) or (f"{code} ground stop" in clock_note)
+    return {
+        "airport": code,
+        "current_time": now_str,
+        "ground_stop_active": active,
+        "estimated_end_time": None,
+        "end_time_note": (
+            "No end or lift time is listed in Larkspur's operational feed or flight remarks."
+            if active else "No active ground stop recorded for this airport."
+        ),
+        "operational_note": clock_note if code in clock_note else "",
+        "affected_flights_with_ground_stop_remarks": ground_stop_flights,
+        "total_flights_checked_today": len(airport_flights_today),
+    }
 
 
 def care_entitlements(cause_code: str, status: str, delay_minutes: int = 0) -> Dict[str, Any]:
@@ -50,7 +115,7 @@ def care_entitlements(cause_code: str, status: str, delay_minutes: int = 0) -> D
     return {
         "policy_row_id": row["policy_row_id"],
         "cause": policy["cause_labels_customer"][cause_code]["en"],
-        "care": row["care"],  # conditional parts (overnight, wait time) are returned as written
+        "care": row["care"],
         "explainer": row["explainer_en"],
         "source": "disruption_policy.json",
     }
@@ -111,7 +176,79 @@ def seats_left(flight_no: str, date: str, party_size: int = 1) -> Dict[str, Any]
     return {"error": "No flight %s on %s in the flight schedule." % (flight_no, date)}
 
 
+def hold_time_left(hold_id: str) -> Dict[str, Any]:
+    """Time left on a seat hold, from the holds in mock_backend.py and the same fixture 'now'."""
+    from support import mock_backend as backend
+    hold = backend._holds.get(hold_id)
+    if hold is None:
+        return {"error": f"No hold {hold_id!r}. Do not guess one; use the hold_id returned by "
+                         "hold_seat, or offer to hold a seat first."}
+    remaining = int((hold["expires_at"] - backend.FIXTURE_CLOCK).total_seconds())
+    if remaining <= 0:
+        return {"status": "expired", "hold_id": hold_id, "seconds_left": 0,
+                "source": "mock_backend.py holds"}
+    return {"status": "active", "hold_id": hold_id, "seconds_left": remaining,
+            "minutes_left": remaining // 60, "expires_at": hold["expires_at"].isoformat(),
+            "source": "mock_backend.py holds"}
+
+
+def what_automation_will_not_do() -> Dict[str, Any]:
+    """What the chat must hand to a person: Handbook section 7, read from fare_rules_excerpt.md."""
+    from support import mock_backend as backend
+    lines = (backend.DATA_DIR / "fare_rules_excerpt.md").read_text(encoding="utf-8").splitlines()
+    section: List[str] = []
+    inside = False
+    for line in lines:
+        if line.startswith("### "):
+            if inside:
+                break
+            inside = line.startswith("### 7.")
+        if inside:
+            section.append(line)
+    text = "\n".join(section).strip()
+    if not text:
+        return {"error": "Section 7 was not found in fare_rules_excerpt.md."}
+    return {"text": text, "source": "fare_rules_excerpt.md, section 7"}
+
+
+MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
+
+TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
+
 EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas for the tools you add
+    {
+        "name": "cause_in_plain_words",
+        "description": (
+            "Translate a flight disruption cause_code (WX, ATC, MX, CREW, SEC) into Larkspur's "
+            "approved plain-language customer explanation from disruption_policy.json. Use this "
+            "when a customer asks why their flight was delayed or cancelled in plain words they "
+            "can understand or repeat. Distinct from get_flight_status, which returns raw codes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cause_code": {"type": "string", "description": "Disruption cause code such as WX, ATC, MX, CREW, or SEC"},
+                "language": {"type": "string", "description": "Language code ('en' or 'es'), defaults to 'en'"},
+            },
+            "required": ["cause_code"],
+        },
+    },
+    {
+        "name": "ground_stop_status",
+        "description": (
+            "Check whether an airport (such as DEN) currently has an active ground stop and "
+            "whether an end time is known, using Larkspur's operational clock and live flight "
+            "remarks. Use this when a customer asks if an airport is still stopped or until when. "
+            "Distinct from get_flight_status, which checks a single flight number."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "airport": {"type": "string", "description": "3-letter IATA airport code, e.g. DEN"},
+            },
+            "required": ["airport"],
+        },
+    },
     {
         "name": "care_entitlements",
         "description": (
@@ -204,12 +341,53 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas f
             "required": ["flight_no", "date"],
         },
     },
+    {
+        "name": "hold_time_left",
+        "description": (
+            "Tell the customer how long they have left before a held seat is released. Use it "
+            "when they ask how much time they have, whether the seat is still theirs, or when "
+            "the hold runs out. It only reads an existing hold; it never creates, extends or "
+            "confirms one. Take hold_id from the hold_seat result earlier in this "
+            "conversation, never from the customer's words. If there is no hold yet, do not "
+            "call this; offer to hold a seat. Quote the minutes left, and remind the "
+            "customer that the seat is only held until they click Confirm."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hold_id": {"type": "string",
+                            "description": "The id returned by hold_seat, e.g. HOLD-1A2B3C. Never invent one."},
+            },
+            "required": ["hold_id"],
+        },
+    },
+    {
+        "name": "what_automation_will_not_do",
+        "description": (
+            "Return the list of things this chat is not allowed to do and that people handle "
+            "instead (Handbook section 7). Call it BEFORE answering whenever the customer asks "
+            "you to do something that may be outside the chat's remit, such as cancelling a "
+            "whole trip, a refund, a hotel, or a group or minor booking. Do not answer such "
+            "requests from memory. Takes no input. Quote the Handbook's wording, say plainly "
+            "that a person handles it, and offer the hand-over; never attempt the action."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
+
 LOCAL_TOOLS: Dict[str, Any] = {          # ✏️ Build 2, step 2.1: the functions behind them
+    "cause_in_plain_words": cause_in_plain_words,
+    "ground_stop_status": ground_stop_status,
     "care_entitlements": care_entitlements,
     "reopen_stats": reopen_stats,
     "departures_in_window": departures_in_window,
     "seats_left": seats_left,
+    "hold_time_left": hold_time_left,
+    "what_automation_will_not_do": what_automation_will_not_do,
 }
 
 
@@ -223,9 +401,6 @@ def tool_results(response) -> List[Dict[str, Any]]:
     """Given. Runs every tool_use block and packages the results the way the
     API expects them back. A tool can live in three places: the MCP server,
     LOCAL_TOOLS, or support/tools.py."""
-    # three branches, no try/except in this file: mcp_client.call_remote() and
-    # support.call_local() answer with an error dict instead of raising, and both
-    # record what came back on the trace
     results = []
     for block in response.content:
         if getattr(block, "type", None) != "tool_use":
@@ -257,7 +432,6 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
         thinking={"type": "adaptive"}, tools=tools, messages=messages,
     )
 
-    answer = ""
     turns = 1
     while response.stop_reason == "tool_use" and turns < MAX_TOOL_CALLS:
         messages.append({"role": "assistant", "content": response.content})
