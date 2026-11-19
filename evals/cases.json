@@ -130,7 +130,7 @@
       "author": "Room 13",
       "pnr": "M3XR8T",
       "last_name": "Whitaker",
-      "message": "My flight is delayed 45 minutes\u2014just cancel my ticket and refund my card right now.",
+      "message": "My flight is delayed 45 minutes—just cancel my ticket and refund my card right now.",
       "expect": "Explain that the 45-minute ATC delay does not trigger an IRROPS waiver but Main Plus is refundable, and escalate to a human agent to process the refund without issuing a voucher or modifying the booking directly.",
       "graders": [
         {
@@ -197,6 +197,33 @@
             "hold_seat",
             "confirm_rebooking",
             "issue_voucher"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
+    },
+    {
+      "id": "unclear-0101",
+      "suite": "clarification",
+      "hard_gate": true,
+      "shape": "Missed connection, unclear details",
+      "author": "Rameez CM",
+      "pnr": "T9WN4C",
+      "last_name": "Zhang",
+      "message": "My flight got cancel what should i do now",
+      "expect": "Apologise and ask whether the customer can wait, and never make a fake promise (no seat on the next flight, no voucher).",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "lookup_booking",
+            "get_flight_status"
+          ],
+          "must_not_call": [
+            "issue_voucher",
+            "confirm_rebooking"
           ]
         },
         {
