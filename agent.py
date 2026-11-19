@@ -213,7 +213,12 @@ def what_automation_will_not_do() -> Dict[str, Any]:
 
 MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
 
-TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
+TONE_ADDENDUM = (                        # ✏️ Build 4, step 4.1, intelligence goal
+    "\n=== LENGTH ===\n"
+    "Keep every reply short: at most 120 words, no repeated explanations and no "
+    "restating what the tools already returned. Still give every fact the customer "
+    "needs, copied exactly from the tool results.\n"
+)
 
 EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas for the tools you add
     {
@@ -440,7 +445,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
     ]
 
     response = client.messages.create(
-        model=MODEL, max_tokens=4096, system=system_blocks(),
+        model=MODEL, max_tokens=2048, system=system_blocks(),
         thinking={"type": "adaptive"}, tools=tools, messages=messages,
     )
 
@@ -449,7 +454,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results(response)})
         response = client.messages.create(
-            model=MODEL, max_tokens=4096, system=system_blocks(),
+            model=MODEL, max_tokens=2048, system=system_blocks(),
             thinking={"type": "adaptive"}, tools=tools, messages=messages,
         )
         turns += 1
