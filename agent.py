@@ -77,6 +77,40 @@ def reopen_stats(intent_label: str = "") -> Dict[str, Any]:
     }
 
 
+def departures_in_window(airport: str, date: str, from_time: str, to_time: str = "23:59") -> Dict[str, Any]:
+    """Flights still leaving one airport on one date between two times, from flights.csv."""
+    from support import mock_backend as backend
+    if not backend.ISO_DATE.match(str(date)):
+        return {"error": "date must be YYYY-MM-DD, got %s" % date}
+    rows = [
+        {"flight_no": r["flight_no"], "dest": r["dest"], "sched_dep_local": r["sched_dep_local"],
+         "est_dep_local": backend._add_minutes(r["sched_dep_local"], int(r["delay_min"] or 0)),
+         "status": r["status"], "delay_min": int(r["delay_min"] or 0)}
+        for r in backend.load_flights()
+        if r["origin"] == airport.strip().upper() and r["date"] == date
+        and r["status"] != "CANCELLED" and from_time <= r["sched_dep_local"] <= to_time
+    ]
+    rows.sort(key=lambda r: r["sched_dep_local"])
+    if not rows:
+        return {"airport": airport, "date": date, "departures": [],
+                "note": "No departures in that window in the flight schedule."}
+    return {"airport": airport, "date": date, "departures": rows}
+
+
+def seats_left(flight_no: str, date: str, party_size: int = 1) -> Dict[str, Any]:
+    """Free seats per cabin on one flight and date, from flights.csv."""
+    from support import mock_backend as backend
+    if not backend.ISO_DATE.match(str(date)):
+        return {"error": "date must be YYYY-MM-DD, got %s" % date}
+    for r in backend.load_flights():
+        if r["flight_no"] == flight_no.strip().upper() and r["date"] == date:
+            y, j = int(r["seats_left_Y"] or 0), int(r["seats_left_J"] or 0)
+            return {"flight_no": r["flight_no"], "date": date, "status": r["status"],
+                    "seats_left_Y": y, "seats_left_J": j, "party_size": party_size,
+                    "fits_in_Y": y >= party_size, "fits_in_J": j >= party_size}
+    return {"error": "No flight %s on %s in the flight schedule." % (flight_no, date)}
+
+
 EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas for the tools you add
     {
         "name": "care_entitlements",
@@ -122,10 +156,60 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [      # ✏️ Build 2, step 2.1: schemas f
             "required": [],
         },
     },
+    {
+        "name": "departures_in_window",
+        "description": (
+            "List Larkspur flights still scheduled to leave one airport on one local date "
+            "between two times, from the flight schedule. Use it when the customer asks what "
+            "else is leaving their airport today, such as 'what is still leaving Denver this "
+            "afternoon?'. It is a general airport schedule, not tied to the customer's "
+            "booking; use search_alternatives for options on their own booking. When the "
+            "customer says 'today' or 'this afternoon', take the date from their booked "
+            "flight, never from the system clock. Cancelled flights are left out. Each row "
+            "gives flight number, destination, scheduled and estimated departure, status and "
+            "delay. It does not say whether seats are free; call seats_left for that. Offer "
+            "only what it returns."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "airport": {"type": "string", "description": "Origin airport IATA code, e.g. DEN."},
+                "date": {"type": "string", "description": "Local date in ISO format YYYY-MM-DD, e.g. 2025-05-08."},
+                "from_time": {"type": "string", "description": "Window start, local 24-hour HH:MM, e.g. 12:00 for the start of the afternoon."},
+                "to_time": {"type": "string", "description": "Window end, local 24-hour HH:MM, e.g. 18:00. Defaults to the end of the day."},
+            },
+            "required": ["airport", "date", "from_time"],
+        },
+    },
+    {
+        "name": "seats_left",
+        "description": (
+            "Check how many free seats one flight has in each cabin, from the flight "
+            "schedule: economy (Y) and premium (J). Use it when the customer asks whether "
+            "there is room on a flight for their party, such as 'is there room for the three "
+            "of us?'. Call it whenever the customer names a flight and asks about room, "
+            "even if another tool already showed seat numbers: this is the current count "
+            "for exactly that flight and date. Take the date from the customer's booked "
+            "flight, never from the system clock. Pass party_size to get a yes or no per "
+            "cabin. It reports availability only; it does not hold or book a seat. Use "
+            "hold_seat for that."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flight_no": {"type": "string", "description": "Flight number, e.g. LK417."},
+                "date": {"type": "string", "description": "Local date in ISO format YYYY-MM-DD, e.g. 2025-05-08."},
+                "party_size": {"type": "integer", "description": "Number of travellers who need seats together. Defaults to 1."},
+            },
+            "required": ["flight_no", "date"],
+        },
+    },
 ]
 LOCAL_TOOLS: Dict[str, Any] = {          # ✏️ Build 2, step 2.1: the functions behind them
     "care_entitlements": care_entitlements,
     "reopen_stats": reopen_stats,
+    "departures_in_window": departures_in_window,
+    "seats_left": seats_left,
 }
 
 
@@ -225,8 +309,8 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "flight_no": {"type": "string"},
-                    "date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "flight_no": {"type": "string", "description": "Flight number, e.g. LK415."},
+                    "date": {"type": "string", "description": "Local flight date in ISO format YYYY-MM-DD, e.g. 2025-05-08. Any other format is rejected."},
                 },
                 "required": ["flight_no", "date"],
             },
@@ -242,7 +326,7 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
             ),
             "input_schema": {
                 "type": "object",
-                "properties": {"pnr": {"type": "string"}},
+                "properties": {"pnr": {"type": "string", "description": "The booking's confirmation code (PNR)."}},
                 "required": ["pnr"],
             },
         },
@@ -272,10 +356,19 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
         },
         {
             "name": "hold_seat",
-            "description": "Place a 15-minute hold on one alternative. Reversible. It simply expires.",
+            "description": (
+                "Place a 15-minute hold on one alternative so the seat is kept while the "
+                "customer decides. Reversible: it simply expires, and it is not a booking. "
+                "When a flight is cancelled and search_alternatives has returned options, "
+                "hold the top-ranked one, then tell the customer it is only held and that "
+                "they must click Confirm to finalize. Never describe a hold as a rebooking."
+            ),
             "input_schema": {
                 "type": "object",
-                "properties": {"option_id": {"type": "string"}, "pnr": {"type": "string"}},
+                "properties": {
+                    "option_id": {"type": "string", "description": "An option_id exactly as returned by search_alternatives. Never invent one."},
+                    "pnr": {"type": "string", "description": "The booking's confirmation code (PNR)."},
+                },
                 "required": ["option_id", "pnr"],
             },
         },
@@ -328,7 +421,13 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
         },
         {
             "name": "send_confirmation",
-            "description": "Send the customer a written confirmation of what was just done. Benign.",
+            "description": (
+                "Send the customer a written record of an action that has already "
+                "happened, such as a confirmed rebooking or an issued voucher. Call it "
+                "only after that action succeeded, never before and never to announce "
+                "something that is only planned or held. The message must state only "
+                "facts from tool results."
+            ),
             "input_schema": {
                 "type": "object",
                 "properties": {"pnr": {"type": "string"}, "message": {"type": "string"}},
